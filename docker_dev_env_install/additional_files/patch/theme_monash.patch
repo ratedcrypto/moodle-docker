@@ -1,0 +1,39 @@
+diff --git a/lib.php b/lib.php
+index b046d73..dd75c71 100644
+--- a/lib.php
++++ b/lib.php
+@@ -193,33 +193,3 @@ function theme_monash_page_init() {
+ function theme_monash_get_banner_cache() {
+     return \cache::make('theme_monash', 'banner');
+ }
+-
+-/**
+- * @return bool|mod_quiz_renderer
+- */
+-function theme_monash_obtain_quiz_output() {
+-    if (isset($GLOBALS['output'])) {
+-        $output = $GLOBALS['output'];
+-
+-        if ($output instanceof mod_quiz_renderer) {
+-            return $output;
+-        }
+-    }
+-
+-    return false;
+-}
+-
+-/**
+- * @return bool|quiz_attempt
+- */
+-function theme_monash_obtain_attemptobj() {
+-    if (isset($GLOBALS['attemptobj'])) {
+-        $attemptobj =  $GLOBALS['attemptobj'];
+-
+-        if ($attemptobj instanceof quiz_attempt) {
+-            return $attemptobj;
+-        }
+-    }
+-
+-    return false;
+-}
+\ No newline at end of file

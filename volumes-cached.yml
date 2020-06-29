@@ -1,0 +1,29 @@
+# Here we support https://docs.docker.com/docker-for-mac/osxfs-caching/
+# for improved performance on mac
+version: "3.5"
+services:
+  webserver:
+    volumes:
+      - "${MOODLE_DOCKER_WWWROOT}:/var/www/html:cached"
+      - "${MOODLE_DOCKER_MOODLEDATAROOT}:/var/www/moodledata:cached"
+      - "${MOODLE_DOCKER_PHPUNITDATAROOT}:/var/www/phpunitdata:cached"
+      - "${MOODLE_DOCKER_BEHATDATAROOT}:/var/www/behatdata:cached"
+      - "${MOODLE_DOCKER_BEHATFAILDUMPSDATAROOT}:/var/www/behatfaildumps:cached"
+      - "${MOODLE_DOCKER_WEBSERVERLOGS}/access.log:/var/log/nginx/access.log:cached"
+      - "${MOODLE_DOCKER_WEBSERVERLOGS}/error.log:/var/log/nginx/error.log:cached"
+      - "./nginx/moodle.conf:/etc/nginx/conf.d/default.conf:cached"
+      - "./nginx/mailhog.conf:/etc/nginx/conf.d/mailhog.conf:cached"
+      - "./nginx/jenkins.conf:/etc/nginx/conf.d/jenkins.conf:cached"
+
+  phpfpm:
+    volumes:
+      - "${MOODLE_DOCKER_WWWROOT}:/var/www/html:cached"
+      - "${MOODLE_DOCKER_MOODLEDATAROOT}:/var/www/moodledata:cached"
+      - "${MOODLE_DOCKER_PHPUNITDATAROOT}:/var/www/phpunitdata:cached"
+      - "${MOODLE_DOCKER_BEHATDATAROOT}:/var/www/behatdata:cached"
+      - "${MOODLE_DOCKER_BEHATFAILDUMPSDATAROOT}:/var/www/behatfaildumps:cached"
+      - "./php/xdebug.ini:/usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini:cached"
+
+  db:
+    volumes:
+      - "${MOODLE_DOCKER_POSTGRESDATAROOT}:/var/lib/postgresql/data:cached"

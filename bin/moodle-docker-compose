@@ -1,0 +1,172 @@
+#!/usr/bin/env bash
+set -e
+
+run_composer () {
+    get_basedir
+    echo basedir: $basedir
+    export ASSETDIR="${basedir}/assets"
+
+    # Create required directories
+    mkdir -p ${basedir}/mount/{behatdata,behatfaildumps,moodledata,phpunitdata,postgresdata,jenkinsdata,moodle,logs/nginx}
+    touch ${basedir}/mount/logs/nginx/{access,error}.log
+
+    # Set UID and GID to current user
+    [[ -z "$DOCKER_UID" ]] && export DOCKER_UID=$(id -u)
+    [[ -z "$DOCKER_GID" ]] && export DOCKER_GID=$(id -g)
+
+    # Set up path to mount
+    if [ -z "$MOODLE_DOCKER_WWWROOT" ]; then
+        export MOODLE_DOCKER_WWWROOT="${basedir}/mount/moodle"
+    fi
+    if [ -z "$MOODLE_DOCKER_WEBSERVERLOGS" ]; then
+        export MOODLE_DOCKER_WEBSERVERLOGS="${basedir}/mount/logs/nginx"
+    fi
+    if [ -z "$MOODLE_DOCKER_MOODLEDATAROOT" ]; then
+        export MOODLE_DOCKER_MOODLEDATAROOT="${basedir}/mount/moodledata"
+    fi
+    if [ -z "$MOODLE_DOCKER_PHPUNITDATAROOT" ]; then
+        export MOODLE_DOCKER_PHPUNITDATAROOT="${basedir}/mount/phpunitdata"
+    fi
+    if [ -z "$MOODLE_DOCKER_BEHATDATAROOT" ]; then
+        export MOODLE_DOCKER_BEHATDATAROOT="${basedir}/mount/behatdata"
+    fi
+    if [ -z "$MOODLE_DOCKER_BEHATFAILDUMPSDATAROOT" ]; then
+        export MOODLE_DOCKER_BEHATFAILDUMPSDATAROOT="${basedir}/mount/behatfaildumps"
+    fi
+    if [ -z "$MOODLE_DOCKER_POSTGRESDATAROOT" ]; then
+        export MOODLE_DOCKER_POSTGRESDATAROOT="${basedir}/mount/postgresdata"
+    fi
+    if [ -z "$MOODLE_DOCKER_JENKINSDATAROOT" ]; then
+        export MOODLE_DOCKER_JENKINSDATAROOT="${basedir}/mount/jenkinsdata"
+    fi
+
+    # Ensure customized config.php for the Docker containers is in place
+    if [ ! -f "$MOODLE_DOCKER_WWWROOT/config.php" ] ; then
+        cp "${basedir}/config.docker-template.php" "$MOODLE_DOCKER_WWWROOT/config.php"
+    fi
+
+    if [ ! -d "$MOODLE_DOCKER_WWWROOT" ]; then
+        echo 'Error: $MOODLE_DOCKER_WWWROOT is not set or not an existing directory'
+        exit 1
+    fi
+
+    if [ -z "$MOODLE_DOCKER_DB" ];
+    then
+        export MOODLE_DOCKER_DB=pgsql
+    fi
+
+    dockercompose="docker-compose -f ${basedir}/base.yml"
+    # dockercompose="${dockercompose} -f ${basedir}/service.mail.yml"
+
+    # PHP Version.
+    export MOODLE_DOCKER_PHP_VERSION=${MOODLE_DOCKER_PHP_VERSION:-7.1}
+
+    # Database flavour
+    if [ "$MOODLE_DOCKER_DB" != 'pgsql' ];
+    then
+        dockercompose="${dockercompose} -f ${basedir}/db.${MOODLE_DOCKER_DB}.yml"
+
+    fi
+
+    # Support PHP version overrides for DB..
+    filename="${basedir}/db.${MOODLE_DOCKER_DB}.${MOODLE_DOCKER_PHP_VERSION}.yml"
+    if [ -f $filename ]; then
+        dockercompose="${dockercompose} -f ${filename}"
+    fi
+
+    # Selenium browser
+    if [[ ! -z "$MOODLE_DOCKER_BROWSER" ]] && [[ "$MOODLE_DOCKER_BROWSER" != "firefox" ]];
+    then
+        dockercompose="${dockercompose} -f ${basedir}/selenium.${MOODLE_DOCKER_BROWSER}.yml"
+    fi
+
+    if [[ -z "$MOODLE_DOCKER_SELENIUM_VNC_PORT" ]]
+    then
+        export MOODLE_DOCKER_SELENIUM_SUFFIX=""
+    else
+        export MOODLE_DOCKER_SELENIUM_SUFFIX="-debug"
+        dockercompose="${dockercompose} -f ${basedir}/selenium.debug.yml"
+    fi
+
+    # External services
+    if [[ ! -z "$MOODLE_DOCKER_PHPUNIT_EXTERNAL_SERVICES" ]];
+    then
+        dockercompose="${dockercompose} -f ${basedir}/phpunit-external-services.yml"
+    fi
+
+    # Webserver host
+    export MOODLE_DOCKER_WEB_HOST=${MOODLE_DOCKER_WEB_HOST:-localhost}
+
+    # Webserver port
+    export MOODLE_DOCKER_WEB_PORT=${MOODLE_DOCKER_WEB_PORT:-80}
+    if [[ $MOODLE_DOCKER_WEB_PORT -gt 0 ]]
+    then
+        dockercompose="${dockercompose} -f ${basedir}/webserver.port.yml"
+    fi
+
+
+    # Mac OS specific
+    if [[ "$(uname)" == "Darwin" ]]; then
+        # Support https://docs.docker.com/docker-for-mac/osxfs-caching/
+        dockercompose="${dockercompose} -f ${basedir}/volumes-cached.yml"
+        set +e
+        add_mac_hosts
+        set -e
+    # Linux specific
+    elif [[ "$(uname)" == "Linux" ]]; then
+        # Support https://github.com/iamluc/docker-hostmanager
+        dockercompose="${dockercompose} -f ${basedir}/hostmanager.yml"
+    fi
+
+
+    $dockercompose $@
+}
+
+# nasty portable way to the directory of this script, following symlink,
+# because readlink -f not on macOS thanks stack overflow
+get_basedir () {
+    SOURCE="${BASH_SOURCE[0]}"
+    while [ -h "$SOURCE" ]; do # resolve $SOURCE until the file is no longer a symlink
+      DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
+      SOURCE="$(readlink "$SOURCE")"
+      [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE" # if $SOURCE was a relative symlink, we need to resolve it relative to the path where the symlink file was located
+    done
+    basedir="$( cd -P "$( dirname "$SOURCE" )/../" && pwd )"
+}
+
+# adds hostnames to localhost on mac /etc/hosts file
+add_mac_hosts () {
+    # only use sudo if needed.
+    # run these one time setup commands if you wish to avoid sudo for this script (dev env only please):
+    # sudo chown $USER /etc/hosts
+    # sudo chmod 0664 /etc/hosts
+    if [[ -w /etc/hosts ]]; then
+        use_sudo=
+    else
+        use_sudo='sudo'
+    fi
+
+    # check the hostname and only add entries if they are not already in the file
+    if ! grep -q 'webserver.localdomain' '/etc/hosts'; then
+        echo '' | $use_sudo tee -a /etc/hosts > /dev/null
+        echo '# eassessment' | $use_sudo tee -a /etc/hosts > /dev/null
+        echo '127.0.0.1 webserver.localdomain' | $use_sudo tee -a /etc/hosts > /dev/null
+    fi
+
+    if ! grep -q 'mailhog.localdomain' '/etc/hosts'; then
+        echo '127.0.0.1 mailhog.localdomain' | $use_sudo tee -a /etc/hosts > /dev/null
+    fi
+    if ! grep -q 'selenium.localdomain' '/etc/hosts'; then
+        echo '127.0.0.1 selenium.localdomain' | $use_sudo tee -a /etc/hosts > /dev/null
+    fi
+    #if ! grep -q 'jenkins.localdomain' '/etc/hosts'; then
+    #    echo '127.0.0.1 jenkins.localdomain' | $use_sudo tee -a /etc/hosts > /dev/null
+    #fi
+
+    if ! grep -q 'db.localdomain' '/etc/hosts'; then
+        echo '127.0.0.1 db.localdomain' | $use_sudo tee -a /etc/hosts > /dev/null
+        echo '# /eassessment' | $use_sudo tee -a /etc/hosts > /dev/null
+    fi
+}
+
+run_composer $@

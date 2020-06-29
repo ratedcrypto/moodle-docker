@@ -1,0 +1,100 @@
+<?xml version="1.0"?>
+<project name="eAssessmentMoodle" default="help">
+
+    <xmlproperty file="properties.xml" keepRoot="false" />
+    
+    <target name="help" description="Provides information about using build file" hidden="true">
+        <exec command="vendor/bin/phing -f ${phing.file} -l" outputProperty="phing_targets" />
+        <echo>Please select a target.</echo>
+        <echo>${phing_targets}</echo>
+    </target>
+
+    <target name="prepare_build_environment" hidden="true">
+        <echo message="start" />
+        <if>
+            <available file="base" type="dir" />
+        <then>
+        </then>
+        <else>
+            <delete includeemptydirs="true" dir="base" />
+            <mkdir dir="base" />
+            <mkdir dir="done" />
+        </else>
+        </if>
+        <echo message="end" />
+    </target>
+
+    <target name="insert_core" depends="prepare_build_environment" hidden="true">
+        <if>
+            <available file="base/admin" type="dir" />
+        <then>
+        </then>
+        <else>
+            <gitclone branch="${core.tag}" repository="${core.repo}" targetPath="base/"/>
+        </else>
+        </if>
+    </target>
+
+    <target name="insert_addons" depends="insert_core" hidden="true">
+        <exec command="cd addons/ &amp;&amp; echo *" escape="false" outputProperty="addons" />
+        <foreach param="filename" target="insert_addon">
+            <filelist dir = "./addons/" files="${addons}" />
+        </foreach>
+    </target>
+
+    <target name="insert_addon" hidden="true">
+        <property name = "addon_name" value = "${filename}">
+            <filterchain>
+                <replaceregexp>
+                    <regexp pattern = "\d\d-(\w+)\.xml" replace = "\1" />
+                </replaceregexp>
+            </filterchain>
+        </property>
+        <echo>Inserting ${addon_name}</echo>
+        <xmlproperty file = "addons/${filename}" prefix = "addons" />
+        <delete dir="base/${addons.${addon_name}.dest}" includeemptydirs="true" />
+        <gitclone
+                branch = "${addons.${addon_name}.tag}"
+                repository = "${addons.${addon_name}.repo}"
+                targetPath = "base/${addons.${addon_name}.dest}" />
+        <move file="addons/${filename}" tofile="done/${filename}" overwrite="true"/>
+    </target>
+    
+    <target name="prepare_rpm_build_environment" hidden="true">
+        <delete includeemptydirs="true" dir="rpmbuild" />
+        <exec command="mkdir -p rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}" />
+        <copy file="artefacts/eass-app-${version}.tar.gz" todir="rpmbuild/SOURCES" />
+    </target>
+    
+    <target name="prepare_artefacts_storage" hidden="true">
+        <mkdir dir="artefacts" />
+    </target>
+
+    <target name="package" description="Builds and packages application as a gzipped tar" depends="prepare_build_environment,insert_core,insert_addons,prepare_artefacts_storage">
+        <tar destfile="artefacts/eass-app-${version}.tar.gz" basedir="base/" includeemptydirs="true" compression="gzip" />
+        <delete includeemptydirs="true" dir="base" />
+    </target>
+    
+    <target name="package-retain-git" description="Builds and packages application as a gzipped tar, doesn't strip out git repo metadata(makes package larger)" depends="prepare_build_environment,insert_core,insert_addons,prepare_artefacts_storage">
+        <tar destfile="artefacts/eass-app-${version}.tar.gz" includeemptydirs="true" compression="gzip">
+            <FileSet dir="base" defaultexcludes="false"/>
+        </tar>
+        <delete includeemptydirs="true" dir="base" />
+    </target>
+    
+    <target name="build-rpm" description="Builds a release RPM based on tar package" depends="package,prepare_rpm_build_environment">
+        <exec command="EASS_VERSION=${version} rpmbuild -bb eass-app.spec" />
+        <copy todir="artefacts">
+            <fileset dir="rpmbuild/RPMS/noarch/" includes="*.rpm" />
+        </copy>
+        <delete includeemptydirs="true" dir="rpmbuild" />
+    </target>
+    
+    <target name="build-snapshot-rpm" description="Builds a timestamped snapshot RPM based on tar package" depends="package,prepare_rpm_build_environment">
+        <exec command="EASS_VERSION=${version} EASS_SNAPSHOT=true rpmbuild -bb eass-app.spec" />
+        <copy todir="artefacts">
+            <fileset dir="rpmbuild/RPMS/noarch/" includes="*.rpm" />
+        </copy>
+        <delete includeemptydirs="true" dir="rpmbuild" />
+    </target>
+</project>

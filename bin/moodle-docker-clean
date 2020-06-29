@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -e
+
+# Nasty portable way to the directory of this script, following symlink,
+# because readlink -f not on OSX. Thanks stack overflow..
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do # resolve $SOURCE until the file is no longer a symlink
+  DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE" # if $SOURCE was a relative symlink, we need to resolve it relative to the path where the symlink file was located
+done
+basedir="$( cd -P "$( dirname "$SOURCE" )/../" && pwd )"
+export ASSETDIR="${basedir}/assets"
+
+# Remove directories, containers, networks and volumes
+${basedir}/bin/moodle-docker-compose down -v
+rm -rf ${basedir}/mount/{behatdata,behatfaildumps,moodledata,phpunitdata,postgresdata,jenkinsdata,logs}
+
+echo 'Deleted all folders except moodle under `mount`, they will be recreated when you run `moodle-docker-compose`'
+echo 'Deleted all containers, networks and volumes'
+echo 'Docker images are cached so you might like to rebuild them'
+echo '`bin/moodle-docker-compose build` to rebuild all images'
+echo '`bin/moodle-docker-compose build <service name>` to rebuild the image for a specific service'

@@ -1,0 +1,35 @@
+FROM jenkins/jenkins:lts
+
+USER root
+
+ARG CONTAINER_USER_ID
+ARG CONTAINER_GROUP_ID
+ENV CONTAINER_USER_ID $CONTAINER_USER_ID
+ENV CONTAINER_GROUP_ID $CONTAINER_GROUP_ID
+
+# Need to recreate user with supplied uid with 'no-log-init' option
+# for large uid, see: https://github.com/moby/moby/issues/5419
+RUN ["userdel", "jenkins"]
+RUN groupadd --gid ${CONTAINER_GROUP_ID} jenkins
+RUN useradd --no-log-init --uid ${CONTAINER_USER_ID} --gid ${CONTAINER_GROUP_ID} jenkins
+
+# # Install packages.
+RUN apt-get update -y \
+    && apt-get install -y --no-install-recommends libpq-dev sudo git curl nano procps net-tools
+
+# # Install docker and docker-compose.
+RUN mkdir -p /tmp/download && \
+ curl -L https://get.docker.com/builds/Linux/x86_64/docker-latest.tgz | tar -xz -C /tmp/download && \
+ rm -rf /tmp/download/docker/dockerd && \
+ mv /tmp/download/docker/docker* /usr/local/bin/ && \
+ rm -rf /tmp/download && \
+ curl -L https://github.com/docker/compose/releases/download/1.18.0/docker-compose-`uname -s`-`uname -m` -o /usr/local/bin/docker-compose && \
+ chmod +x /usr/local/bin/docker-compose && \
+ groupadd -g 999 docker && \
+ usermod -aG staff,docker jenkins && \
+ echo "%jenkins ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/jenkins-sudoers
+ 
+
+user jenkins
+
+WORKDIR /var/jenkins_home
