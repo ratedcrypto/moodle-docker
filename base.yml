@@ -89,7 +89,7 @@ services:
         args:
           CONTAINER_USER_ID: "$DOCKER_UID"
           CONTAINER_GROUP_ID: "$DOCKER_GID"
-          MOODLE_DOCKER_POSTGRES_VERSION: 9.4
+          MOODLE_DOCKER_POSTGRES_VERSION: 9.6
     image: monash/moodle-postgres:latest
     ports:
       - "5432:5432"
